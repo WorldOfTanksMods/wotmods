@@ -2,7 +2,7 @@ from gui.battle_control.battle_feedback import BattleFeedbackAdaptor,BattleFeedb
 from constants import BATTLE_EVENT_TYPE as _SET
 from gui.battle_control import g_sessionProvider
 from gui.battle_control.battlesessionprovider import BattleSessionProvider
-from gui.WindowsManager import g_windowsManager
+#from gui.Scaleform.daapi.view.battle.markers import _VehicleMarker, MarkersManager
 from plugins.Engine.ModUtils import BattleUtils, MinimapUtils, FileUtils, HotKeysUtils, DecorateUtils
 from plugins.Engine.Plugin import Plugin
 import Math
@@ -10,6 +10,9 @@ import BigWorld
 from copy import deepcopy
 from functools import partial
 from gui.shared.utils.sound import Sound
+from gui.app_loader import g_appLoader
+from gui.shared import g_eventBus, events
+from gui.app_loader.settings import APP_NAME_SPACE as _SPACE
 
 
 class Marker(object):
@@ -25,15 +28,21 @@ class Marker(object):
         self.handle = None
     
     def remove(self):
-        if self.handle is not None and g_windowsManager.battleWindow is not None:
-            g_windowsManager.battleWindow.markersManager._MarkersManager__ownUI.delMarker(self.handle)
+        battle = g_appLoader.getDefBattleApp()
+        if battle:
+            markersManager = battle.markersManager
+            if self.handle and markersManager:
+                markersManager._MarkersManager__ownUI.delMarker(self.handle)
         
     def show(self):
         matrixProve = Math.Matrix()
         matrixProve.translation = self.position + (0, SpotExtended.myConf['markerHeight'], 0)
-        vehiclePoint = g_windowsManager.battleWindow.markersManager._MarkersManager__ownUI.addMarker(matrixProve, 'StaticObjectMarker')
-        g_windowsManager.battleWindow.markersManager._MarkersManager__ownUI.markerInvoke(vehiclePoint, ('init', [SpotExtended.myConf['markerType'], 40, 40 + 1, self.distance]))
-        self.handle = vehiclePoint
+        battle = g_appLoader.getDefBattleApp()
+        if battle:
+            markersManager = battle.markersManager
+            vehiclePoint = markersManager._MarkersManager__ownUI.addMarker(matrixProve, 'StaticObjectMarker')
+            markersManager._MarkersManager__ownUI.markerInvoke(vehiclePoint, ('init', [SpotExtended.myConf['markerType'], 40, 40 + 1, self.distance]))
+            self.handle = vehiclePoint
         
         
 
@@ -98,6 +107,7 @@ class MessageManager():
         self.message = ''
         self.vehiclesIDs = {}
         for vehicleID in vehiclesIDs:
+            vehicleID = fixId(vehicleID)
             self.vehiclesIDs[vehicleID] = vehicleID
     
     def add(self, idV, player, arena, position):
@@ -126,8 +136,9 @@ class MessageManager():
         panel = SpotExtended.myConf['panel']
         color = SpotExtended.myConf['color']
         index = 0
-        if g_windowsManager.battleWindow is not None and panel in ('VehicleErrorsPanel', 'VehicleMessagesPanel', 'PlayerMessagesPanel'):
-            g_windowsManager.battleWindow.call('battle.' + panel + '.ShowMessage', [index, self.message, color])
+        battle = g_appLoader.getDefBattleApp()
+        if battle and panel in ('VehicleErrorsPanel', 'VehicleMessagesPanel', 'PlayerMessagesPanel'):
+            battle.call('battle.' + panel + '.ShowMessage', [index, self.message, color])
         self.clean()
         
     def clean(self):
@@ -151,14 +162,11 @@ class Utils(object):
             
     @staticmethod
     def minimapPulse(vehicleID):
-        if g_windowsManager is None:
-            return    
-        if g_windowsManager.battleWindow is None:
-            return
-        minimap = g_windowsManager.battleWindow.minimap
-        if minimap is None:
-            return
-        minimap.showActionMarker(vehicleID,SpotExtended.myConf['minimapEffect'])
+        battle = g_appLoader.getDefBattleApp()
+        if battle:
+            minimap = battle.minimap
+            if minimap:
+                minimap.showActionMarker(vehicleID,SpotExtended.myConf['minimapEffect'])
 
 class SpotExtended(Plugin):
     # default config
@@ -188,27 +196,25 @@ class SpotExtended(Plugin):
         super(SpotExtended, SpotExtended).run()
         cls.addEventHandler(SpotExtended.myConf['reloadConfigKey'],cls.reloadConfig)
         saveOldFuncs()
-        g_windowsManager.onInitBattleGUI += SpotExtended.start
-        g_windowsManager.onDestroyBattleGUI += SpotExtended.stop
+        add = g_eventBus.addListener
+        appEvent = events.AppLifeCycleEvent
+        add(appEvent.INITIALIZING, SpotExtended.start)
+        add(appEvent.DESTROYED, SpotExtended.stop)
         BattleFeedbackAdaptor.setPlayerAssistResult = SpotExtended.setPlayerAssistResult
         BattleFeedbackPlayer.setPlayerAssistResult = SpotExtended.setPlayerAssistResult
     
-    # injected, called when battle stop
     @staticmethod
-    def stop():
-        Utils.inBattle = False
-        mm.clean()
+    def stop(event):
+        if event.ns == _SPACE.SF_BATTLE:
+            Utils.inBattle = False
+            mm.clean()
     
-    # injected, called when battle start
     @staticmethod
-    def start():
-        Utils.inBattle = True
-        mm.clean()
-        '''if g_sessionProvider is not None and g_sessionProvider.getFeedback() is not None:
-            g_sessionProvider._BattleSessionProvider__feedback.stop()
-            g_sessionProvider._BattleSessionProvider__feedback = BattleFeedbackAdaptor()
-            g_sessionProvider._BattleSessionProvider__feedback.start(g_sessionProvider._BattleSessionProvider__arenaDP)
-         '''
+    def start(event):
+        if event.ns == _SPACE.SF_BATTLE:
+            Utils.inBattle = True
+            mm.clean()
+    
     # injected, called when client receive events
     @staticmethod
     def setPlayerAssistResult(self, assistType, vehiclesIDs):
@@ -218,6 +224,7 @@ class SpotExtended(Plugin):
             arena = player.arena
             msgm = MessageManager(vehiclesIDs)
             for idV in vehiclesIDs:
+                idV = fixId(idV)
                 if SpotExtended.myConf['showMarker']:
                     Utils.waitForPosition(idV, arena, partial(mm.addMarker, idV, player)) 
                 if SpotExtended.myConf['showMessage']:
@@ -232,5 +239,13 @@ def saveOldFuncs():
     global old__start
     DecorateUtils.ensureGlobalVarNotExist('old__start')
     old__start = BattleFeedbackAdaptor.setPlayerAssistResult
+    
+# thanks Spoter_ru for this fix
+def fixId(i):
+    if i >> 32 & 4294967295L > 0: 
+        i = i >> 32 & 4294967295L
+    else: 
+        i &= 4294967295L
+    return i
     
 mm = MarkerManager()
