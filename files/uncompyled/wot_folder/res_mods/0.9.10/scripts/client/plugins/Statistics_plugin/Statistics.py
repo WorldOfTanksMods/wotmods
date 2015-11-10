@@ -63,6 +63,9 @@ class Statistics(Plugin):
               'flags_folder':'scripts/client/plugins/Statistics_plugin/flags',
               'rating_folder':'scripts/client/plugins/Statistics_plugin/ratings',
               
+              'death_font_color':'#2B2323',
+              'compatriot_font_color':'#2B2323',
+              
               'powerbar_enable': True,
               'powerbar_texture':'system/maps/col_white.dds',
               'powerbar_width': 400,
@@ -75,13 +78,9 @@ class Statistics(Plugin):
               'panels_enable' : True,
               'left' : "<font color='#{color_pr}'>{lang}</font>  {player_name}<br/>",
               'right' : "<font color='#{color_pr}'>{lang}</font>  {player_name}<br/>",
-              'left_c' : "<font size='17' color='#{color_pr}'>«</font><font color='#{color_pr}'>{lang}</font><font size='17' color='#{color_pr}'>»</font>  {player_name}<br/>",
-              'right_c' : "<font size='17' color='#{color_pr}'>«</font><font color='#{color_pr}'>{lang}</font><font size='17' color='#{color_pr}'>»</font>  {player_name}<br/>",
               
               'left_2' : "<font color='#{color_pr}'>{tank_name}</font><br/>",
               'right_2' : "<font color='#{color_pr}'>{tank_name}</font><br/>",
-              'left_c_2' : "<font color='#{color_pr}'>{tank_name}</font><br/>",
-              'right_c_2' : "<font color='#{color_pr}'>{tank_name}</font><br/>",
               
               'marker_enable' : True,
               'marker' : '{player_name} {pr}',
@@ -96,13 +95,9 @@ class Statistics(Plugin):
               'tab_enable': True,
               'tab_left': '{lang}|{wr}%|{pr}  ',
               'tab_right': '  {lang}|{wr}%|{pr}',
-              'tab_left_c': '«{lang}»|{wr}%|{pr}  ',
-              'tab_right_c': '  «{lang}»|{wr}%|{pr}',
               
               'tab_left_2' : "<font color='#{color_pr}'>{tank_name}</font><br/>",
               'tab_right_2' : "<font color='#{color_pr}'>{tank_name}</font><br/>",
-              'tab_left_c_2' : "<font color='#{color_pr}'>{tank_name}</font><br/>",
-              'tab_right_c_2' : "<font color='#{color_pr}'>{tank_name}</font><br/>",
               
               'win_chance_enable': True,
               'win_chance_text': "( Chance for win: <font color='{color}'>{win_chance}%</font> )",
@@ -293,7 +288,7 @@ class Statistics(Plugin):
         return orig
     
     @staticmethod
-    def getFormat(type,pr,wr,bt,lang,player_name='',tank_name='',clan_name=''):
+    def getFormat(type,pr,wr,bt,lang,player_name='',tank_name='',clan_name='', isAlive= True, isCompatriot = False):
         if clan_name:
             clan_name = "["+clan_name+"]"
         formatz = {'player_name':player_name, 'lang':lang, 'tank_name':tank_name, 'clan_name':clan_name}
@@ -301,6 +296,19 @@ class Statistics(Plugin):
         formatz = Statistics.updateWithColorDict(formatz, couple)
         formatz = Statistics.updateWithNumbersDict(formatz, couple,type)
         formatz['flag_url'] = 'img://'+Statistics.myConf['flags_folder']+'/'+lang+'.png'
+        if isAlive:
+            formatz['ifdeath_color_begin'] = ''
+            formatz['ifdeath_color_end'] = ''
+        else:
+            formatz['ifdeath_color_begin'] = '<font color="'+Statistics.myConf['death_font_color']+'">'
+            formatz['ifdeath_color_end'] = '</font>'
+            
+        if not isCompatriot:
+            formatz['ifcompatriot_color_begin'] = ''
+            formatz['ifcompatriot_color_end'] = ''
+        else:
+            formatz['ifcompatriot_color_begin'] = '<font color="'+Statistics.myConf['compatriot_font_color']+'">'
+            formatz['ifcompatriot_color_end'] = '</font>'
         return formatz
     
     @staticmethod
@@ -347,34 +355,29 @@ class Statistics(Plugin):
         if not Statistics.okCw() or not Statistics.myConf['panels_enable']:
             return tuple(tmp)
         uid = vInfoVO.player.accountDBID
-        if Statistics.cache.has_key('panels') and Statistics.cache['panels'].has_key(uid):
-            fullPlayerName_built, shortName_built = Statistics.cache['panels'][uid]
+        isAlive = vInfoVO.isAlive()
+        cacheId = str(uid) + str(isAlive)
+        if Statistics.cache.has_key('panels') and Statistics.cache['panels'].has_key(cacheId):
+            fullPlayerName_built, shortName_built = Statistics.cache['panels'][cacheId]
         else:
             player = BigWorld.player()
             pr, lang, wr, bt = Statistics.getInfos(uid)
             tank_name = vInfoVO.vehicleType.shortName
             clan_name = vInfoVO.player.clanAbbrev
             player_name = vInfoVO.player.name
+            isCompatriot = Statistics.isMyCompatriot(uid,player);
             if BattleUtils.isMyTeam(vInfoVO.team):
-                if Statistics.isMyCompatriot(uid,player):
-                    fullPlayerName_template = Statistics.myConf['left_c']
-                    shortName_template = Statistics.myConf['left_c_2']
-                else:
-                    fullPlayerName_template = Statistics.myConf['left']
-                    shortName_template = Statistics.myConf['left_2']
+                fullPlayerName_template = Statistics.myConf['left']
+                shortName_template = Statistics.myConf['left_2']
             else:
-                if Statistics.isMyCompatriot(uid,player):
-                    fullPlayerName_template = Statistics.myConf['right_c']
-                    shortName_template = Statistics.myConf['right_c_2']
-                else:
-                    fullPlayerName_template = Statistics.myConf['right']
-                    shortName_template = Statistics.myConf['right_2']
-            formatz= Statistics.getFormat('panels',pr, wr, bt, lang, player_name, tank_name, clan_name)
+                fullPlayerName_template = Statistics.myConf['right']
+                shortName_template = Statistics.myConf['right_2']
+            formatz= Statistics.getFormat('panels',pr, wr, bt, lang, player_name, tank_name, clan_name, isAlive,isCompatriot)
             fullPlayerName_built = fullPlayerName_template.format(**formatz)
             shortName_built = shortName_template.format(**formatz)
             if not Statistics.cache.has_key('panels'):
                 Statistics.cache['panels'] = {}
-            Statistics.cache['panels'][uid] = (fullPlayerName_built, shortName_built)
+            Statistics.cache['panels'][cacheId] = (fullPlayerName_built, shortName_built)
         
         tmp[0] = fullPlayerName_built
         tmp[2] = shortName_built
@@ -383,36 +386,36 @@ class Statistics(Plugin):
     @staticmethod
     def new__setName(self, dbID, pName = None):
         old__setName(self, dbID, pName)
-        if Statistics.myConf['chat_enable'] and Statistics.okCw():
+        if not Statistics.myConf['chat_enable'] or not Statistics.okCw():
+            return self
+        arenaDP = g_sessionProvider.getArenaDP()
+        vID = arenaDP.getVehIDByAccDBID(dbID)
+        vInfo = arenaDP.getVehicleInfo(vID)
+        isAlive = vInfo.isAlive()
+        cacheId = str(uid) + str(isAlive)
+        if Statistics.cache.has_key('chat') and Statistics.cache['chat'].has_key(cacheId):
+            self._ctx['playerName'] = Statistics.cache['chat'][cacheId]
+        else:
             pr, lang, wr, bt = Statistics.getInfos(dbID)
             player_name = self._ctx['playerName']
-            arenaDP = g_sessionProvider.getArenaDP()
-            vID = arenaDP.getVehIDByAccDBID(dbID)
-            vInfo = arenaDP.getVehicleInfo(vID)
             tank_name = vInfo.vehicleType.shortName
             clan_name = vInfo.player.clanAbbrev
-            formatz= Statistics.getFormat('chat',pr, wr, bt, lang, player_name, tank_name, clan_name)
+            isCompatriot = Statistics.isMyCompatriot(dbID,BigWorld.player());
+            formatz= Statistics.getFormat('chat',pr, wr, bt, lang, player_name, tank_name, clan_name, isAlive,isCompatriot)
             self._ctx['playerName'] = Statistics.myConf['chat'].format(**formatz)
+            if not Statistics.cache.has_key('chat'):
+                Statistics.cache['chat'] = {}
+            Statistics.cache['chat'][cacheId] = self._ctx['playerName']
         return self
     @staticmethod
     def new__setNameCommon(self, dbID, pName = None):
         old__setNameCommon(self, dbID, pName)
-        if Statistics.myConf['chat_enable'] and Statistics.okCw():
-            pr,lang,wr,bt = Statistics.getInfos(dbID)
-            player_name = self._ctx['playerName']
-            arenaDP = g_sessionProvider.getArenaDP()
-            vID = arenaDP.getVehIDByAccDBID(dbID)
-            vInfo = arenaDP.getVehicleInfo(vID)
-            tank_name = vInfo.vehicleType.shortName
-            clan_name = vInfo.player.clanAbbrev
-            formatz= Statistics.getFormat('chat',pr, wr, bt, lang, player_name, tank_name, clan_name)
-            self._ctx['playerName'] = Statistics.myConf['chat'].format(**formatz)
+        Statistics.new__setName(self, dbID, pName);
         return self
     
     @staticmethod
     def new_addVehicleMarker(self, vProxy, vInfo, guiProps):
-        curVeh = BigWorld.player().arena.vehicles[vProxy.id]
-        if not Statistics.myConf['marker_enable'] or BattleUtils.isCw() or not curVeh['isAlive']:
+        if not Statistics.myConf['marker_enable'] or BattleUtils.isCw():
             return old_addVehicleMarker(self, vProxy, vInfo, guiProps)
         
         #----------- original code ------------------
@@ -441,21 +444,22 @@ class Statistics(Plugin):
                 squadTeam = 'enemy'
             squadIcon = squadIconTemplate % (squadTeam, teamIdx)
         #----- end -------
-        
-        if curVeh is not None:
-            curID = curVeh['accountDBID']
-            if Statistics.cache.has_key('marker') and Statistics.cache['marker'].has_key(curID):
-                pName_built = Statistics.cache['marker'][curID]
-            else:
-                pr, lang, wr, bt = Statistics.getInfos(curID)
-                player_name = pName
-                tank_name = vehShortName
-                clan_name = clanAbbrev
-                formatz= Statistics.getFormat('marker',pr, wr, bt, lang, player_name, tank_name, clan_name)
-                pName_built = Statistics.myConf['marker'].format(**formatz)
-                if not Statistics.cache.has_key('marker'):
-                    Statistics.cache['marker'] = {}
-                Statistics.cache['marker'][curID] = pName_built
+        isAlive = vInfo.isAlive()
+        curID = vInfo.player.accountDBID
+        cacheId = str(curID) + str(isAlive)
+        if Statistics.cache.has_key('marker') and Statistics.cache['marker'].has_key(cacheId):
+            pName_built = Statistics.cache['marker'][cacheId]
+        else:
+            pr, lang, wr, bt = Statistics.getInfos(curID)
+            player_name = pName
+            tank_name = vehShortName
+            clan_name = clanAbbrev
+            isCompatriot = Statistics.isMyCompatriot(dbID,BigWorld.player());
+            formatz= Statistics.getFormat('marker',pr, wr, bt, lang, player_name, tank_name, clan_name, isAlive, isCompatriot)
+            pName_built = Statistics.myConf['marker'].format(**formatz)
+            if not Statistics.cache.has_key('marker'):
+                Statistics.cache['marker'] = {}
+            Statistics.cache['marker'][cacheId] = pName_built
         
         #----------- original code ------------------
         self.invokeMarker(markerID, 'init', [vType.classTag,
@@ -481,14 +485,18 @@ class Statistics(Plugin):
     def new_makeItem(self, vInfoVO, viStatsVO, userGetter, isSpeaking, actionGetter, regionGetter, playerTeam, isEnemy, squadIdx, isFallout = False):
         tmp = old_makeItem(self, vInfoVO, viStatsVO, userGetter, isSpeaking, actionGetter, regionGetter, playerTeam, isEnemy, squadIdx, isFallout)
         if Statistics.myConf['battle_loading_enable'] and Statistics.okCw():
-            pr, lang, wr, bt = Statistics.getInfos(vInfoVO.player.accountDBID)
+            dbID = vInfoVO.player.accountDBID
+            pr, lang, wr, bt = Statistics.getInfos(dbID)
             player_name = tmp['playerName']
             tank_name = tmp['vehicleName']
             region = tmp['region']
             clan_name = tmp['clanAbbrev']
             if region:
                 player_name += " "+region
-            formatz= Statistics.getFormat('battle_loading',pr, wr, bt, lang, player_name, tank_name, clan_name)
+            isAlive = vInfoVO.isAlive()
+            player = BigWorld.player();
+            isCompatriot = Statistics.isMyCompatriot(dbID,player);
+            formatz= Statistics.getFormat('battle_loading',pr, wr, bt, lang, player_name, tank_name, clan_name, isAlive, isCompatriot)
             if BattleUtils.isMyTeam(vInfoVO.team):
                 playerName_template = Statistics.myConf['battle_loading_string_left']
             else:
@@ -509,33 +517,28 @@ class Statistics(Plugin):
         tank_name = tmp['vehicle']
         region = tmp['region']
         clan_name = tmp['clanAbbrev']
-        if Statistics.cache.has_key('tab') and Statistics.cache['tab'].has_key(dbID):
-            userName_built,vehicle_built = Statistics.cache['tab'][dbID]
+        isAlive = vInfoVO.isAlive()
+        cacheId = str(dbID) + str(isAlive)
+        if Statistics.cache.has_key('tab') and Statistics.cache['tab'].has_key(cacheId):
+            userName_built,vehicle_built = Statistics.cache['tab'][cacheId]
         else:
-            player = BigWorld.player()            
+            player = BigWorld.player()       
             if region:
                 player_name +=' '+region
+            isCompatriot = Statistics.isMyCompatriot(dbID,player);
             pr, lang, wr, bt = Statistics.getInfos(dbID)
             if BattleUtils.isMyTeam(vInfoVO.team):
-                if Statistics.isMyCompatriot(dbID,player):
-                    userName_template = Statistics.myConf['tab_left_c']
-                    vehicle_template = Statistics.myConf['tab_left_c_2']
-                else:
-                    userName_template =Statistics.myConf['tab_left']
-                    vehicle_template = Statistics.myConf['tab_left_2']
+                userName_template =Statistics.myConf['tab_left']
+                vehicle_template = Statistics.myConf['tab_left_2']
             else:
-                if Statistics.isMyCompatriot(dbID,player):
-                    userName_template = Statistics.myConf['tab_right_c']
-                    vehicle_template = Statistics.myConf['tab_right_c_2']
-                else:
-                    userName_template = Statistics.myConf['tab_right'] 
-                    vehicle_template = Statistics.myConf['tab_right_2']       
-            formatz= Statistics.getFormat('battle_loading',pr, wr, bt, lang, player_name, tank_name, clan_name)
+                userName_template = Statistics.myConf['tab_right'] 
+                vehicle_template = Statistics.myConf['tab_right_2']       
+            formatz= Statistics.getFormat('battle_loading',pr, wr, bt, lang, player_name, tank_name, clan_name, isAlive,isCompatriot)
             userName_built = userName_template.format(**formatz)
             vehicle_built = vehicle_template.format(**formatz)
             if not Statistics.cache.has_key('tab'):
                 Statistics.cache['tab'] = {}
-            Statistics.cache['tab'][dbID] = (userName_built,vehicle_built)
+            Statistics.cache['tab'][cacheId] = (userName_built,vehicle_built)
     
         tmp['region'] = ''
         tmp['userName'] = userName_built
